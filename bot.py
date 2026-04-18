@@ -1,447 +1,317 @@
-import asyncio
-import sqlite3
-import random
-import string
-from datetime import datetime
-from typing import Optional, Dict, Tuple
+import json
+import logging
+import base64
+import os
+from io import BytesIO
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import Command, StateFilter
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import (
-    ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, 
-    InlineKeyboardButton, CallbackQuery, Message
-)
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+# --- НАСТРОЙКИ ---
+BOT_TOKEN = "8507469444:AAGv0ZRhyazsuSdxkkr1eNRi3DTJdc127fw"
+ADMIN_ID = 1471307057
+WEBAPP_URL = "https://твой-сайт.com"  # ЗАМЕНИ НА URL ГДЕ ЛЕЖИТ HTML
 
-# ========== КОНФИГ ==========
-BOT_TOKEN = "8276230046:AAGI7gkFHbI80AVgP0-g55qBm7SBCw00Duw"  # Замени на свой токен от @BotFather
-ADMIN_ID = 1471307057  # Твой Telegram ID
+# База файлов для товаров (замени на реальные пути к файлам)
+PRODUCT_FILES = {
+    "SAIKA S1 VPN": ["files/saika_s1.ovpn", "files/saika_s1.conf"],
+    "VIP VPN": ["files/vip.ovpn"],
+    "GTR VPN": ["files/gtr.ovpn"],
+    "ULTRA MAX VPN": ["files/ultra.ovpn"],
+    "STRONG VPN": ["files/strong.ovpn"],
+    "UNLY VPN": ["files/unly.ovpn"],
+    "TDM SKILL VPN": ["files/tdm.ovpn"],
+    "FUCK VPN": ["files/fuck.ovpn"],
+    "DEAD ALL VPN": ["files/dead.ovpn"],
+    "Магнит андроид": ["files/magnet.apk"],
+    "Магнит ios": ["files/magnet.ipa"],
+    "Пак сайки": ["files/saika_pack.zip"],
+    "Пак unly": ["files/unly_pack.zip"],
+    "DNS android": ["files/dns_android.txt"],
+    "DNS Ios": ["files/dns_ios.txt"]
+}
 
-# ========== ИНИЦИАЛИЗАЦИЯ ==========
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(storage=MemoryStorage())
+logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
-# ========== БАЗА ДАННЫХ ==========
-def init_db():
-    conn = sqlite3.connect("spectra.db")
-    cur = conn.cursor()
-    
-    # Пользователи
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            user_id TEXT PRIMARY KEY,
-            username TEXT,
-            full_name TEXT,
-            trust_score REAL DEFAULT 0,
-            review_code TEXT,
-            status TEXT DEFAULT 'user',
-            deposit REAL DEFAULT 0,
-            responsible_id TEXT,
-            reg_date TEXT,
-            base_date TEXT,
-            is_admin INTEGER DEFAULT 0,
-            plus_count INTEGER DEFAULT 0,
-            minus_count INTEGER DEFAULT 0,
-            reports_filed INTEGER DEFAULT 0,
-            reports_confirmed INTEGER DEFAULT 0
-        )
-    ''')
-    
-    # Сделки
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS deals (
-            deal_id TEXT PRIMARY KEY,
-            buyer_id TEXT,
-            seller_id TEXT,
-            guarantor_id TEXT,
-            amount REAL,
-            currency TEXT,
-            status TEXT,
-            created_at TEXT
-        )
-    ''')
-    
-    # Репорты
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS reports (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            from_id TEXT,
-            to_id TEXT,
-            reason TEXT,
-            status TEXT,
-            created_at TEXT
-        )
-    ''')
-    
-    # Репутация
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS reputation (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            from_id TEXT,
-            to_id TEXT,
-            rating INTEGER,
-            created_at TEXT
-        )
-    ''')
-    
-    # Добавляем админа если нет
-    cur.execute("SELECT * FROM users WHERE user_id = ?", (str(ADMIN_ID),))
-    if not cur.fetchone():
-        cur.execute('''
-            INSERT INTO users (user_id, username, status, is_admin, base_date, reg_date, trust_score)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (str(ADMIN_ID), "admin", "garant", 1, datetime.now().strftime("%d.%m.%Y %H:%M"), 
-              datetime.now().strftime("%d %B %Y"), 100))
-    
-    conn.commit()
-    conn.close()
-
-def get_user(user_id: str) -> Optional[Dict]:
-    conn = sqlite3.connect("spectra.db")
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
-    row = cur.fetchone()
-    conn.close()
-    if row:
-        columns = ["user_id", "username", "full_name", "trust_score", "review_code", 
-                   "status", "deposit", "responsible_id", "reg_date", "base_date", 
-                   "is_admin", "plus_count", "minus_count", "reports_filed", "reports_confirmed"]
-        return dict(zip(columns, row))
-    return None
-
-def create_user(user_id: str, username: str = None, full_name: str = None):
-    conn = sqlite3.connect("spectra.db")
-    cur = conn.cursor()
-    review_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=7))
-    base_date = datetime.now().strftime("%d.%m.%Y %H:%M")
-    cur.execute('''
-        INSERT INTO users (user_id, username, full_name, trust_score, review_code, status, 
-                          deposit, reg_date, base_date, is_admin, plus_count, minus_count)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (user_id, username, full_name, 0, f"R-{review_code}", "user", 0, 
-          datetime.now().strftime("%d %B %Y"), base_date, 0, 0, 0))
-    conn.commit()
-    conn.close()
-
-def update_user_status(user_id: str, status: str, deposit: float = 0, responsible_id: str = None):
-    conn = sqlite3.connect("spectra.db")
-    cur = conn.cursor()
-    cur.execute("UPDATE users SET status = ?, deposit = ?, responsible_id = ? WHERE user_id = ?", 
-                (status, deposit, responsible_id, user_id))
-    conn.commit()
-    conn.close()
-
-def add_scammer(user_id: str, username: str = None):
-    conn = sqlite3.connect("spectra.db")
-    cur = conn.cursor()
-    cur.execute('''
-        INSERT OR REPLACE INTO users (user_id, username, status, trust_score, base_date)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (user_id, username, "scammer", 0, datetime.now().strftime("%d.%m.%Y %H:%M")))
-    conn.commit()
-    conn.close()
-
-# ========== КНОПКИ (с твоими ID) ==========
-def main_menu_keyboard(is_admin: bool = False):
-    buttons = [
-        [KeyboardButton(text="🔎 Поиск")],
-        [KeyboardButton(text="👤 Профиль")],
-        [KeyboardButton(text="🛡 Сделка")],
-        [KeyboardButton(text="📢 Канал")]
-    ]
-    if is_admin:
-        buttons.append([KeyboardButton(text="👑 Панель руч.")])
-    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
-
-# Инлайн кнопки с твоими ID
-search_numbers_kb = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="1", callback_data="search_num_5874960879434338403"),
-     InlineKeyboardButton(text="2", callback_data="search_num_5877465816030515018"),
-     InlineKeyboardButton(text="3", callback_data="search_num_5883964170268840032")],
-    [InlineKeyboardButton(text="4", callback_data="search_num_5951584964305755220"),
-     InlineKeyboardButton(text="5", callback_data="search_num_5879585266426973039"),
-     InlineKeyboardButton(text="6", callback_data="search_num_5886666250158870040")],
-    [InlineKeyboardButton(text="7", callback_data="search_num_5870734657384877785")],
-    [InlineKeyboardButton(text="✅ Выбрать пользователя", callback_data="select_user")],
-    [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_menu")]
-])
-
-# ========== СОСТОЯНИЯ ДЛЯ СДЕЛКИ ==========
-class DealStates(StatesGroup):
-    waiting_partner = State()
-    waiting_amount = State()
-    waiting_currency = State()
-    waiting_guarantor = State()
-
-# ========== ОБРАБОТЧИКИ ==========
-
-@dp.message(Command("start"))
-async def cmd_start(message: Message):
-    user_id = str(message.from_user.id)
-    user = get_user(user_id)
-    
-    if not user:
-        create_user(user_id, message.from_user.username, message.from_user.full_name)
-        user = get_user(user_id)
-    
-    status_map = {"user": "👤 Пользователь", "garant": "✋ Рученик", "scammer": "🔴 Скамер"}
-    status_text = status_map.get(user["status"], "👤 Пользователь")
-    
-    fee_text = f" | {int(user['deposit'])}%" if user["status"] == "garant" and user["deposit"] > 0 else ""
-    
-    await message.answer(
-        f"👤 {message.from_user.full_name}{fee_text}\n\n"
-        f"Добро пожаловать в 1Ndex Base — пространство подлинной безопасности и доверия.\n\n"
-        f"🔎 Поиск пользователей\n"
-        f"🛡 Проведение сделок\n"
-        f"✅ Гарантия безопасности",
-        reply_markup=main_menu_keyboard(user.get("is_admin", 0))
-    )
-
-@dp.message(F.text == "🔎 Поиск")
-async def search_menu(message: Message):
-    await message.answer(
-        "🔎 Поиск пользователя\n\n"
-        "Доступные способы поиска\n\n"
-        "🔗 @username — тег с собачкой\n"
-        "👤 username — тег без собачки\n"
-        "#️⃣ 123456789 — числовой ID\n"
-        "🌐 t.me/username — ссылка на профиль\n"
-        "💬 Пересланное сообщение\n"
-        "✋ Кнопка «Выбрать» ниже",
-        reply_markup=search_numbers_kb
-    )
-
-@dp.callback_query(F.data.startswith("search_num_"))
-async def search_number(callback: CallbackQuery):
-    num_id = callback.data.split("_")[2]
-    await callback.answer(f"Вы выбрали номер {num_id}", show_alert=True)
-
-@dp.callback_query(F.data == "select_user")
-async def select_user_prompt(callback: CallbackQuery):
-    await callback.message.answer("✋ Отправьте username или перешлите сообщение пользователя")
-    await callback.answer()
-
-@dp.callback_query(F.data == "back_to_menu")
-async def back_to_menu(callback: CallbackQuery):
-    await callback.message.delete()
-    await cmd_start(callback.message)
-    await callback.answer()
-
-@dp.message(F.text == "👤 Профиль")
-async def profile(message: Message):
-    user_id = str(message.from_user.id)
-    user = get_user(user_id)
-    
-    if not user:
-        await message.answer("❌ Ошибка. Напишите /start")
-        return
-    
-    status_map = {"user": "👤 Пользователь", "garant": "✋ Рученик", "scammer": "🔴 Скамер"}
-    status_text = status_map.get(user["status"], "👤 Пользователь")
-    
-    trust_emoji = "📈" if user["trust_score"] >= 50 else "📉"
-    
-    await message.answer(
-        f"👤 Ваш профиль\n\n"
-        f"{trust_emoji} Trust Score: {user['trust_score']}%\n"
-        f"#️⃣ Код отзывов: {user['review_code']}\n"
-        f"🛡 Статус: {status_text}\n"
-        f"📅 В сети с: {user['reg_date']}\n\n"
-        f"📊 Репутация\n"
-        f"➕ Получено: +{user['plus_count']} / -{user['minus_count']}\n"
-        f"🚫 Оставлено: +0 / -0\n\n"
-        f"❗ Репорты\n"
-        f"⬆️ Подано: {user['reports_filed']}\n"
-        f"✅ Подтверждено: {user['reports_confirmed']}"
-    )
-
-@dp.message(F.text == "🛡 Сделка")
-async def create_deal(message: Message, state: FSMContext):
-    await message.answer(
-        "🛡 Создание сделки\n\n"
-        "Шаг 1 из 4\n\n"
-        "👤 С кем вы хотите провести сделку?\n\n"
-        "Введите username пользователя (например: @username)"
-    )
-    await state.set_state(DealStates.waiting_partner)
-
-@dp.message(DealStates.waiting_partner)
-async def deal_step_partner(message: Message, state: FSMContext):
-    partner = message.text.strip()
-    await state.update_data(partner=partner)
-    await message.answer(
-        f"🛡 Создание сделки\n\n"
-        f"Шаг 2 из 4\n\n"
-        f"👤 Партнёр: {partner}\n\n"
-        f"💰 Введите сумму сделки:"
-    )
-    await state.set_state(DealStates.waiting_amount)
-
-@dp.message(DealStates.waiting_amount)
-async def deal_step_amount(message: Message, state: FSMContext):
-    try:
-        amount = float(message.text.replace(",", "."))
-        await state.update_data(amount=amount)
-        
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="RUB", callback_data="cur_RUB"),
-             InlineKeyboardButton(text="USD", callback_data="cur_USD"),
-             InlineKeyboardButton(text="USDT", callback_data="cur_USDT")],
-            [InlineKeyboardButton(text="TON", callback_data="cur_TON"),
-             InlineKeyboardButton(text="UAH", callback_data="cur_UAH")]
-        ])
-        
-        data = await state.get_data()
-        await message.answer(
-            f"🛡 Создание сделки\n\n"
-            f"Шаг 3 из 4\n\n"
-            f"👤 Партнёр: {data['partner']}\n"
-            f"💰 Сумма: {amount:.2f}\n\n"
-            f"💳 Выберите валюту:",
-            reply_markup=kb
-        )
-        await state.set_state(DealStates.waiting_currency)
-    except:
-        await message.answer("❌ Введите число (например: 500 или 500.50)")
-
-@dp.callback_query(DealStates.waiting_currency, F.data.startswith("cur_"))
-async def deal_step_currency(callback: CallbackQuery, state: FSMContext):
-    currency = callback.data.split("_")[1]
-    await state.update_data(currency=currency)
-    
-    data = await state.get_data()
-    
-    # Получаем список гарантов
-    conn = sqlite3.connect("spectra.db")
-    cur = conn.cursor()
-    cur.execute("SELECT user_id, username FROM users WHERE status = 'garant' LIMIT 5")
-    guarants = cur.fetchall()
-    conn.close()
-    
-    builder = InlineKeyboardBuilder()
-    for g_id, g_username in guarants:
-        builder.add(InlineKeyboardButton(text=f"👑 @{g_username}", callback_data=f"guar_{g_id}"))
-    builder.adjust(1)
-    builder.add(InlineKeyboardButton(text="◀️ Отмена", callback_data="cancel_deal"))
-    
-    await callback.message.edit_text(
-        f"🛡 Создание сделки\n\n"
-        f"Шаг 4 из 4\n\n"
-        f"👤 Партнёр: {data['partner']}\n"
-        f"💰 Сумма: {data['amount']:.2f} {currency}\n\n"
-        f"🛡 Выберите гаранта:",
-        reply_markup=builder.as_markup()
-    )
-    await state.set_state(DealStates.waiting_guarantor)
-    await callback.answer()
-
-@dp.callback_query(DealStates.waiting_guarantor, F.data.startswith("guar_"))
-async def deal_select_guarantor(callback: CallbackQuery, state: FSMContext):
-    guarantor_id = callback.data.split("_")[1]
-    data = await state.get_data()
-    
-    deal_id = ''.join(random.choices(string.digits, k=10))
-    conn = sqlite3.connect("spectra.db")
-    cur = conn.cursor()
-    cur.execute('''
-        INSERT INTO deals (deal_id, buyer_id, seller_id, guarantor_id, amount, currency, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (deal_id, str(callback.from_user.id), data['partner'].replace("@", ""), 
-          guarantor_id, data['amount'], data['currency'], "waiting", datetime.now().isoformat()))
-    conn.commit()
-    conn.close()
-    
-    await callback.message.edit_text(
-        f"🛡 Сделка создана!\n\n"
-        f"👤 Партнёр: {data['partner']}\n"
-        f"💰 Сумма: {data['amount']:.2f} {data['currency']}\n"
-        f"🛡 Гарант: @{guarantor_id}\n\n"
-        f"⏳ Ожидание подтверждения гаранта..."
-    )
-    
-    # Уведомляем гаранта
-    await bot.send_message(
-        int(guarantor_id),
-        f"🛡 Новая сделка!\n\n"
-        f"👤 Покупатель: @{callback.from_user.username or callback.from_user.id}\n"
-        f"👤 Продавец: {data['partner']}\n"
-        f"💰 Сумма: {data['amount']:.2f} {data['currency']}\n\n"
-        f"Принять / отклонить?",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Принять", callback_data=f"accept_{deal_id}"),
-             InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_{deal_id}")]
-        ])
-    )
-    
-    await state.clear()
-    await callback.answer()
-
-@dp.callback_query(F.data == "cancel_deal")
-async def cancel_deal(callback: CallbackQuery, state: FSMContext):
-    await state.clear()
-    await callback.message.edit_text("❌ Сделка отменена")
-    await callback.answer()
-
-@dp.callback_query(F.data.startswith("accept_"))
-async def accept_deal(callback: CallbackQuery):
-    deal_id = callback.data.split("_")[1]
-    conn = sqlite3.connect("spectra.db")
-    cur = conn.cursor()
-    cur.execute("UPDATE deals SET status = 'active' WHERE deal_id = ?", (deal_id,))
-    cur.execute("SELECT buyer_id, seller_id, amount, currency FROM deals WHERE deal_id = ?", (deal_id,))
-    deal = cur.fetchone()
-    conn.commit()
-    conn.close()
-    
-    if deal:
-        await bot.send_message(int(deal[0]), f"✅ Гарант принял сделку!\nСумма: {deal[2]} {deal[3]}")
-        await callback.message.edit_text(f"✅ Сделка #{deal_id} принята")
-    await callback.answer()
-
-@dp.message(F.text == "👑 Панель руч.")
-async def admin_panel(message: Message):
-    user = get_user(str(message.from_user.id))
-    if not user or not user.get("is_admin"):
-        await message.answer("❌ Нет доступа")
-        return
-    
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕ Добавить рученика", callback_data="add_garant")],
-        [InlineKeyboardButton(text="🔴 Добавить скамера", callback_data="add_scammer")],
-        [InlineKeyboardButton(text="📋 Список ручеников", callback_data="list_garants")]
+# --- КЛАВИАТУРЫ ---
+def main_menu():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🛍️ ОТКРЫТЬ МАГАЗИН", web_app=WebAppInfo(url=WEBAPP_URL))],
+        [InlineKeyboardButton("👤 МОЙ ПРОФИЛЬ", callback_data="profile")],
+        [InlineKeyboardButton("ℹ️ ПОДДЕРЖКА", callback_data="support")]
     ])
-    await message.answer("🛡 Панель управления", reply_markup=kb)
 
-@dp.callback_query(F.data == "add_garant")
-async def add_garant_prompt(callback: CallbackQuery):
-    await callback.message.answer("➕ Введите username рученика (например: @garant):")
-    await callback.answer()
+def admin_order_keyboard(user_id: int, product: str):
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ ПОДТВЕРДИТЬ", callback_data=f"confirm_{user_id}_{product}"),
+            InlineKeyboardButton("❌ ОТКЛОНИТЬ", callback_data=f"decline_{user_id}")
+        ],
+        [InlineKeyboardButton("💬 ЗАПРОСИТЬ УТОЧНЕНИЕ", callback_data=f"ask_{user_id}")]
+    ])
 
-@dp.message(lambda msg: msg.text and msg.text.startswith("@") and msg.chat.id == ADMIN_ID)
-async def process_add_garant(message: Message):
-    username = message.text.replace("@", "")
-    user_id = f"user_{username}"  # В реальном боте нужно получить реальный ID через getChat
+# --- КОМАНДЫ ---
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    welcome = """
+<tg-emoji emoji-id="5355272258979920753">👑</tg-emoji> <b>SAIKA PREMIUM STORE</b>
+
+Привет! Ты находишься в @vpnsaika_bot
+
+<tg-emoji emoji-id="6030445631921721471">🔥</tg-emoji> Качественные впн и многое другое только у нас
+
+<tg-emoji emoji-id="5938413566624272793">🛒</tg-emoji> <b>Магазин</b> — выбор товаров
+<tg-emoji emoji-id="5883964170268840032">👤</tg-emoji> <b>Профиль</b> — твои данные
+
+Выбери действие ниже:
+"""
+    await update.message.reply_text(welcome, reply_markup=main_menu(), parse_mode="HTML")
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
     
-    update_user_status(user_id, "garant", 13.0, str(ADMIN_ID))
-    await message.answer(f"✅ @{username} добавлен как рученик с депозитом $13")
+    if query.data == "profile":
+        user = query.from_user
+        profile_text = f"""
+<tg-emoji emoji-id="5883964170268840032">👤</tg-emoji> <b>ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ</b>
 
-@dp.callback_query(F.data == "add_scammer")
-async def add_scammer_prompt(callback: CallbackQuery):
-    await callback.message.answer("🔴 Введите username скамера (например: @scammer):")
-    await callback.answer()
+Имя: <b>{user.first_name} {user.last_name or ''}</b>
+ID: <code>{user.id}</code>
+Username: @{user.username or 'не указан'}
 
-@dp.message(F.text == "📢 Канал")
-async def channel(message: Message):
-    await message.answer("📢 Наш канал: https://t.me/your_channel")
+Статус: <tg-emoji emoji-id="5217822164362739968">👑</tg-emoji> Premium Client
 
-async def main():
-    init_db()
-    print("✅ Бот запущен!")
-    await dp.start_polling(bot)
+Для покупок откройте магазин 👇
+"""
+        await query.edit_message_text(profile_text, reply_markup=main_menu(), parse_mode="HTML")
+    
+    elif query.data == "support":
+        support_text = """
+<b>ℹ️ ПОДДЕРЖКА SAIKA STORE</b>
+
+По всем вопросам:
+• Оплата и получение файлов
+• Технические проблемы
+• Сотрудничество
+
+Пишите: @saikasupport
+
+<tg-emoji emoji-id="6030445631921721471">⚡</tg-emoji> <i>Работаем 24/7</i>
+"""
+        await query.edit_message_text(support_text, reply_markup=main_menu(), parse_mode="HTML")
+
+# Обработка данных из WebApp
+async def web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    data = json.loads(update.effective_message.web_app_data.data)
+    
+    product = data.get('product')
+    price = data.get('price')
+    user_id = data.get('user_id')
+    username = data.get('username')
+    comment = data.get('comment', '')
+    screenshot = data.get('screenshot')
+    
+    # Сообщение админу
+    admin_msg = f"""
+<b>🛒 НОВЫЙ ЗАКАЗ #{user_id}</b>
+
+Товар: <b>{product}</b>
+Сумма: <b>{price} ₽</b>
+
+Покупатель: @{username} (ID: <code>{user_id}</code>)
+Время: {data.get('timestamp', 'только что')}
+
+Комментарий: {comment or 'нет'}
+"""
+    
+    # Отправляем скриншот админу если есть
+    if screenshot and screenshot.startswith('data:image'):
+        try:
+            # Декодируем base64
+            image_data = base64.b64decode(screenshot.split(',')[1])
+            image_file = BytesIO(image_data)
+            image_file.name = f"check_{user_id}.jpg"
+            
+            await context.bot.send_photo(
+                chat_id=ADMIN_ID,
+                photo=image_file,
+                caption=admin_msg,
+                reply_markup=admin_order_keyboard(user_id, product),
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=admin_msg + f"\n\n❌ Ошибка загрузки скрина: {e}",
+                reply_markup=admin_order_keyboard(user_id, product),
+                parse_mode="HTML"
+            )
+    else:
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=admin_msg + "\n\n⚠️ Скриншот не прикреплен",
+            reply_markup=admin_order_keyboard(user_id, product),
+            parse_mode="HTML"
+        )
+    
+    # Сообщение пользователю
+    user_msg = f"""
+<tg-emoji emoji-id="5217822164362739968">👑</tg-emoji> <b>ЗАКАЗ ПРИНЯТ</b>
+
+Товар: <b>{product}</b>
+Сумма: <b>{price} ₽</b>
+Статус: <code>⏳ ОЖИДАЕТ ПРОВЕРКИ</code>
+
+Администратор проверит оплату и отправит файлы в этот чат.
+Обычно это занимает 5-15 минут.
+"""
+    await update.effective_message.reply_text(user_msg, parse_mode="HTML")
+
+# Обработка кнопок админа
+async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data.split("_")
+    action = data[0]
+    
+    if action == "confirm":
+        user_id = int(data[1])
+        product = "_".join(data[2:])
+        
+        # Уведомление пользователю
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=f"""
+<tg-emoji emoji-id="5217822164362739968">👑</tg-emoji> <b>ОПЛАТА ПОДТВЕРЖДЕНА!</b>
+
+Товар: <b>{product}</b>
+Статус: <code>✅ УСПЕШНО</code>
+
+Сейчас отправим файлы 👇
+""",
+            parse_mode="HTML"
+        )
+        
+        # Отправка файлов
+        files_sent = 0
+        if product in PRODUCT_FILES:
+            for file_path in PRODUCT_FILES[product]:
+                try:
+                    if os.path.exists(file_path):
+                        with open(file_path, 'rb') as f:
+                            await context.bot.send_document(
+                                chat_id=user_id,
+                                document=f,
+                                caption=f"📁 Файл для {product}" if files_sent == 0 else ""
+                            )
+                        files_sent += 1
+                except Exception as e:
+                    await context.bot.send_message(
+                        chat_id=user_id,
+                        text=f"❌ Ошибка отправки файла: {e}\nСвяжитесь с поддержкой @saikasupport"
+                    )
+        
+        if files_sent == 0:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text="⚠️ Файлы готовятся, администратор отправит их вручную.\nОжидайте..."
+            )
+        
+        # Обновление сообщения админа
+        await query.edit_message_caption(
+            caption=query.message.caption + f"\n\n✅ <b>ПОДТВЕРЖДЕНО</b>\nФайлов отправлено: {files_sent}",
+            parse_mode="HTML"
+        )
+    
+    elif action == "decline":
+        user_id = int(data[1])
+        
+        await context.bot.send_message(
+            chat_id=user_id,
+            text="""
+❌ <b>ОПЛАТА НЕ ПОДТВЕРЖДЕНА</b>
+
+Пожалуйста, проверьте:
+• Правильность суммы
+• Совпадение реквизитов
+• Успешность транзакции
+
+Если оплата прошла — отправьте скриншот в поддержку @saikasupport
+""",
+            parse_mode="HTML"
+        )
+        
+        await query.edit_message_caption(
+            caption=query.message.caption + "\n\n❌ <b>ОТКЛОНЕНО</b>",
+            parse_mode="HTML"
+        )
+    
+    elif action == "ask":
+        user_id = int(data[1])
+        
+        await context.bot.send_message(
+            chat_id=user_id,
+            text="""
+<tg-emoji emoji-id="6030445631921721471">💬</tg-emoji> <b>УТОЧНЕНИЕ ПО ЗАКАЗУ</b>
+
+Администратор просит уточнить детали оплаты.
+Пожалуйста, отправьте:
+• Точное время платежа
+• Сумму из истории транзакции
+• Банк отправителя
+
+Ответьте прямо в этот чат 👇
+""",
+            parse_mode="HTML"
+        )
+        
+        await query.edit_message_caption(
+            caption=query.message.caption + "\n\n💬 <b>ЗАПРОШЕНО УТОЧНЕНИЕ</b>",
+            parse_mode="HTML"
+        )
+
+# Обработка ответа пользователя на уточнение
+async def handle_user_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    text = update.effective_message.text
+    
+    # Пересылаем ответ админу
+    await context.bot.send_message(
+        chat_id=ADMIN_ID,
+        text=f"""
+📨 <b>ОТВЕТ ОТ ПОЛЬЗОВАТЕЛЯ</b>
+
+От: @{user.username or user.first_name} (ID: <code>{user.id}</code>)
+
+Сообщение:
+{text}
+""",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Подтвердить заказ", callback_data=f"confirm_{user.id}_manual")],
+            [InlineKeyboardButton("↩️ Ответить", url=f"tg://user?id={user.id}")]
+        ])
+    )
+    
+    await update.effective_message.reply_text(
+        "✅ Ваше сообщение отправлено администратору. Ожидайте ответа.",
+        parse_mode="HTML"
+    )
+
+def main():
+    app = Application.builder().token(BOT_TOKEN).build()
+    
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button_handler, pattern="^(profile|support)$"))
+    app.add_handler(CallbackQueryHandler(admin_action, pattern="^(confirm|decline|ask)_"))
+    app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, web_app_data))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, handle_user_reply))
+    
+    print("🚀 Бот запущен!")
+    app.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Создаем папку для файлов если её нет
+    os.makedirs("files", exist_ok=True)
+    main()
